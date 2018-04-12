@@ -61,7 +61,7 @@ typedef struct {
 #define __KB_TREE_T(name)						\
 	typedef struct {							\
 		kbnode_t *root;							\
-		int	off_key, off_ptr, ilen, elen;		\
+		int	off_ptr, ilen, elen;				\
 		int	n, t;								\
 		int	n_keys, n_nodes;					\
 	} kbtree_##name##_t;
