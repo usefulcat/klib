@@ -52,7 +52,7 @@ void ht_khash_int()
 	printf("[ht_khash_int] size: %d\n", kb_size(h));
 	if (1) {
 		int cnt = 0;
-		uint32_t x, y;
+		uint32_t x, y = 0;
 		kb_interval(int, h, 2174625464u, &l, &u);
 		printf("interval for 2174625464: (%u, %u)\n", l? *l : 0, u? *u : 0);
 #define traverse_f(p) { if (cnt == 0) y = *p; ++cnt; }
@@ -61,7 +61,7 @@ void ht_khash_int()
 		printf("# of elements from traversal: %d\n", cnt);
 		printf("first element: %d == %d\n", x, y);
 	}
-	__kb_destroy(h);
+	__kb_destroy(int, h);
 }
 void ht_khash_str()
 {
@@ -75,7 +75,7 @@ void ht_khash_str()
 		else kb_del(str, h, data[i]);
 	}
 	printf("[ht_khash_int] size: %d\n", kb_size(h));
-	__kb_destroy(h);
+	__kb_destroy(str, h);
 }
 void ht_timing(void (*f)(void))
 {

@@ -1,21 +1,21 @@
 /*-
  * Copyright 1997-1999, 2001, John-Mark Gurney.
- *           2008-2009, Attractive Chaos <attractor@live.co.uk>
+ *			 2008-2009, Attractive Chaos <attractor@live.co.uk>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
  *
  * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
+ *	  notice, this list of conditions and the following disclaimer.
  * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
+ *	  notice, this list of conditions and the following disclaimer in the
+ *	  documentation and/or other materials provided with the distribution.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED.	IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -33,6 +33,14 @@
 #include <stdint.h>
 
 #define KB_MAX_DEPTH 64
+
+#ifndef KB_FREE
+#define KB_FREE(p, sz) free(p)
+#endif
+
+#ifndef KB_CALLOC
+#define KB_CALLOC(n, sz) calloc(n, sz)
+#endif
 
 typedef struct {
 	int32_t is_internal:1, n:31;
@@ -62,21 +70,26 @@ typedef struct {
 	kbtree_##name##_t *kb_init_##name(int size)							\
 	{																	\
 		kbtree_##name##_t *b;											\
-		b = (kbtree_##name##_t*)calloc(1, sizeof(kbtree_##name##_t));	\
+		const size_t alloc_sz = sizeof(kbtree_##name##_t);				\
+		b = (kbtree_##name##_t*)KB_CALLOC(1, alloc_sz);					\
 		b->t = ((size - 4 - sizeof(void*)) / (sizeof(void*) + sizeof(key_t)) + 1) >> 1; \
 		if (b->t < 2) {													\
-			free(b); return 0;											\
+			KB_FREE(b, alloc_sz); return 0;								\
 		}																\
 		b->n = 2 * b->t - 1;											\
 		b->off_ptr = 4 + b->n * sizeof(key_t);							\
 		b->ilen = (4 + sizeof(void*) + b->n * (sizeof(void*) + sizeof(key_t)) + 3) >> 2 << 2; \
 		b->elen = (b->off_ptr + 3) >> 2 << 2;							\
-		b->root = (kbnode_t*)calloc(1, b->ilen);						\
+        /* Note: the root node doesn't need this much memory (should */ \
+		/* be passing ilen here). But if we use ilen, we may pass    */	\
+		/* elen when freeing the root, since root->is_internal == 0, */	\
+		/* which will confuse a pool-based allocation scheme.        */	\
+		b->root = (kbnode_t*)KB_CALLOC(1, b->elen);						\
 		++b->n_nodes;													\
 		return b;														\
 	}
 
-#define __kb_destroy(b) do {											\
+#define __kb_destroy(name, b) do {										\
 		int i, max = 8;													\
 		kbnode_t *x, **top, **stack = 0;								\
 		if (b) {														\
@@ -84,7 +97,9 @@ typedef struct {
 			*top++ = (b)->root;											\
 			while (top != stack) {										\
 				x = *--top;												\
-				if (x->is_internal == 0) { free(x); continue; }			\
+				if (x->is_internal == 0) {								\
+					KB_FREE(x, b->elen); continue;						\
+				}														\
 				for (i = 0; i <= x->n; ++i)								\
 					if (__KB_PTR(b, x)[i]) {							\
 						if (top - stack == max) {						\
@@ -94,10 +109,11 @@ typedef struct {
 						}												\
 						*top++ = __KB_PTR(b, x)[i];						\
 					}													\
-				free(x);												\
+				KB_FREE(x, b->ilen);									\
 			}															\
 		}																\
-		free(b); free(stack);											\
+		KB_FREE(b, sizeof(kbtree_##name##_t));							\
+		free(stack);													\
 	} while (0)
 
 #define __KB_GET_AUX1(name, key_t, __cmp)								\
@@ -162,7 +178,7 @@ typedef struct {
 	static void __kb_split_##name(kbtree_##name##_t *b, kbnode_t *x, int i, kbnode_t *y) \
 	{																	\
 		kbnode_t *z;													\
-		z = (kbnode_t*)calloc(1, y->is_internal? b->ilen : b->elen);	\
+		z = (kbnode_t*)KB_CALLOC(1, y->is_internal? b->ilen : b->elen);	\
 		++b->n_nodes;													\
 		z->is_internal = y->is_internal;								\
 		z->n = b->t - 1;												\
@@ -194,7 +210,7 @@ typedef struct {
 			}															\
 			ret = __kb_putp_aux_##name(b, __KB_PTR(b, x)[i], k);		\
 		}																\
-		return ret; 													\
+		return ret;														\
 	}																	\
 	static key_t *kb_putp_##name(kbtree_##name##_t *b, const key_t * __restrict k) \
 	{																	\
@@ -203,7 +219,7 @@ typedef struct {
 		r = b->root;													\
 		if (r->n == 2 * b->t - 1) {										\
 			++b->n_nodes;												\
-			s = (kbnode_t*)calloc(1, b->ilen);							\
+			s = (kbnode_t*)KB_CALLOC(1, b->ilen);						\
 			b->root = s; s->is_internal = 1; s->n = 0;					\
 			__KB_PTR(b, s)[0] = r;										\
 			__kb_split_##name(b, s, 0, r);								\
@@ -255,7 +271,7 @@ typedef struct {
 				memmove(__KB_KEY(key_t, x) + i, __KB_KEY(key_t, x) + i + 1, (x->n - i - 1) * sizeof(key_t)); \
 				memmove(__KB_PTR(b, x) + i + 1, __KB_PTR(b, x) + i + 2, (x->n - i - 1) * sizeof(void*)); \
 				--x->n;													\
-				free(z);												\
+				KB_FREE(z, z->is_internal? b->ilen : b->elen);			\
 				return __kb_delp_aux_##name(b, y, k, s);				\
 			}															\
 		}																\
@@ -283,7 +299,7 @@ typedef struct {
 				memmove(__KB_KEY(key_t, x) + i - 1, __KB_KEY(key_t, x) + i, (x->n - i) * sizeof(key_t)); \
 				memmove(__KB_PTR(b, x) + i, __KB_PTR(b, x) + i + 1, (x->n - i) * sizeof(void*)); \
 				--x->n;													\
-				free(xp);												\
+				KB_FREE(xp, xp->is_internal? b->ilen : b->elen);		\
 				xp = y;													\
 			} else if (i < x->n && (y = __KB_PTR(b, x)[i + 1])->n == b->t - 1) { \
 				__KB_KEY(key_t, xp)[xp->n++] = __KB_KEY(key_t, x)[i];	\
@@ -293,7 +309,7 @@ typedef struct {
 				memmove(__KB_KEY(key_t, x) + i, __KB_KEY(key_t, x) + i + 1, (x->n - i - 1) * sizeof(key_t)); \
 				memmove(__KB_PTR(b, x) + i + 1, __KB_PTR(b, x) + i + 2, (x->n - i - 1) * sizeof(void*)); \
 				--x->n;													\
-				free(y);												\
+				KB_FREE(y, y->is_internal? b->ilen : b->elen);			\
 			}															\
 		}																\
 		return __kb_delp_aux_##name(b, xp, k, s);						\
@@ -308,7 +324,7 @@ typedef struct {
 			--b->n_nodes;												\
 			x = b->root;												\
 			b->root = __KB_PTR(b, x)[0];								\
-			free(x);													\
+			KB_FREE(x, x->is_internal? b->ilen : b->elen);				\
 		}																\
 		return ret;														\
 	}																	\
@@ -375,7 +391,7 @@ typedef struct {
 
 #define kbtree_t(name) kbtree_##name##_t
 #define kb_init(name, s) kb_init_##name(s)
-#define kb_destroy(name, b) __kb_destroy(b)
+#define kb_destroy(name, b) __kb_destroy(name, b)
 #define kb_get(name, b, k) kb_get_##name(b, k)
 #define kb_put(name, b, k) kb_put_##name(b, k)
 #define kb_del(name, b, k) kb_del_##name(b, k)
