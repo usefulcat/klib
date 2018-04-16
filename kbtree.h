@@ -133,17 +133,24 @@ typedef struct {
 	}
 
 #define __KB_GET(name, key_t)											\
+	static kbpos_t kb_getpos_##name(kbtree_##name##_t *b, const key_t * __restrict k) \
+	{																	\
+		kbpos_t pos;													\
+		int r = 0;														\
+		pos.x = b->root;												\
+		while (pos.x) {													\
+			pos.i = __kb_getp_aux_##name(pos.x, k, &r);					\
+			if (pos.i >= 0 && r == 0) return pos;						\
+			if (pos.x->is_internal == 0) { pos.x = 0; return pos; }		\
+			pos.x = __KB_PTR(b, pos.x)[pos.i + 1];						\
+		}																\
+		pos.x = 0;														\
+		return pos;														\
+	}																	\
 	static key_t *kb_getp_##name(kbtree_##name##_t *b, const key_t * __restrict k) \
 	{																	\
-		int i, r = 0;													\
-		kbnode_t *x = b->root;											\
-		while (x) {														\
-			i = __kb_getp_aux_##name(x, k, &r);							\
-			if (i >= 0 && r == 0) return &__KB_KEY(key_t, x)[i];		\
-			if (x->is_internal == 0) return 0;							\
-			x = __KB_PTR(b, x)[i + 1];									\
-		}																\
-		return 0;														\
+		const kbpos_t pos = kb_getpos_##name(b, k);						\
+		return pos.x? &__KB_KEY(key_t, pos.x)[pos.i] : 0;				\
 	}																	\
 	static inline key_t *kb_get_##name(kbtree_##name##_t *b, const key_t k) \
 	{																	\
@@ -397,6 +404,7 @@ typedef struct {
 #define kb_del(name, b, k) kb_del_##name(b, k)
 #define kb_interval(name, b, k, l, u) kb_interval_##name(b, k, l, u)
 #define kb_getp(name, b, k) kb_getp_##name(b, k)
+#define kb_getpos(name, b, k) kb_getpos_##name(b, k)
 #define kb_putp(name, b, k) kb_putp_##name(b, k)
 #define kb_delp(name, b, k) kb_delp_##name(b, k)
 #define kb_intervalp(name, b, k, l, u) kb_intervalp_##name(b, k, l, u)
