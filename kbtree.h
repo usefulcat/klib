@@ -193,7 +193,7 @@ typedef struct {
 	}																	\
 	static key_t *__kb_putp_aux_##name(kbtree_##name##_t *b, kbnode_t *x, const key_t * __restrict k) \
 	{																	\
-		int i = x->n - 1;												\
+		int i;															\
 		key_t *ret;														\
 		if (x->is_internal == 0) {										\
 			i = __kb_getp_aux_##name(x, k, 0);							\
