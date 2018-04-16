@@ -55,8 +55,8 @@ typedef struct {
 	kbpos_t stack[KB_MAX_DEPTH], *p;
 } kbitr_t;
 
-#define	__KB_KEY(type, x)	((type*)((char*)x + 4))
-#define __KB_PTR(btr, x)	((kbnode_t**)((char*)x + btr->off_ptr))
+#define	__KB_KEY(type, x)	((type*)((char*)(x) + 4))
+#define __KB_PTR(btr, x)	((kbnode_t**)((char*)(x) + (btr)->off_ptr))
 
 #define __KB_TREE_T(name)						\
 	typedef struct {							\
@@ -67,15 +67,11 @@ typedef struct {
 	} kbtree_##name##_t;
 
 #define __KB_INIT(name, key_t)											\
-	kbtree_##name##_t *kb_init_##name(int size)							\
+	int kb_static_init_##name(kbtree_##name##_t* b, int size)			\
 	{																	\
-		kbtree_##name##_t *b;											\
-		const size_t alloc_sz = sizeof(kbtree_##name##_t);				\
-		b = (kbtree_##name##_t*)KB_CALLOC(1, alloc_sz);					\
+		memset(b, 0, sizeof(*b));										\
 		b->t = ((size - 4 - sizeof(void*)) / (sizeof(void*) + sizeof(key_t)) + 1) >> 1; \
-		if (b->t < 2) {													\
-			KB_FREE(b, alloc_sz); return 0;								\
-		}																\
+		if (b->t < 2) return -1;										\
 		b->n = 2 * b->t - 1;											\
 		b->off_ptr = 4 + b->n * sizeof(key_t);							\
 		b->ilen = (4 + sizeof(void*) + b->n * (sizeof(void*) + sizeof(key_t)) + 3) >> 2 << 2; \
@@ -86,19 +82,29 @@ typedef struct {
 		/* which will confuse a pool-based allocation scheme.        */	\
 		b->root = (kbnode_t*)KB_CALLOC(1, b->elen);						\
 		++b->n_nodes;													\
+		return 0;														\
+	}																	\
+	kbtree_##name##_t *kb_init_##name(int size)							\
+	{																	\
+		kbtree_##name##_t *b;											\
+		const size_t alloc_sz = sizeof(kbtree_##name##_t);				\
+		b = (kbtree_##name##_t*)KB_CALLOC(1, alloc_sz);					\
+		if (kb_static_init_##name(b, size) != 0) {						\
+			KB_FREE(b, alloc_sz); return 0;								\
+		}																\
 		return b;														\
 	}
 
-#define __kb_destroy(name, b) do {										\
-		int i, max = 8;													\
-		kbnode_t *x, **top, **stack = 0;								\
+#define __kb_static_destroy(name, b) do {								\
 		if (b) {														\
+			int i, max = 8;												\
+			kbnode_t *x, **top, **stack = 0;							\
 			top = stack = (kbnode_t**)calloc(max, sizeof(kbnode_t*));	\
 			*top++ = (b)->root;											\
 			while (top != stack) {										\
 				x = *--top;												\
 				if (x->is_internal == 0) {								\
-					KB_FREE(x, b->elen); continue;						\
+					KB_FREE(x, (b)->elen); continue;					\
 				}														\
 				for (i = 0; i <= x->n; ++i)								\
 					if (__KB_PTR(b, x)[i]) {							\
@@ -109,11 +115,15 @@ typedef struct {
 						}												\
 						*top++ = __KB_PTR(b, x)[i];						\
 					}													\
-				KB_FREE(x, b->ilen);									\
+				KB_FREE(x, (b)->ilen);									\
 			}															\
+			free(stack);												\
 		}																\
+	} while (0)
+
+#define __kb_destroy(name, b) do {										\
+		__kb_static_destroy(name, b);									\
 		KB_FREE(b, sizeof(kbtree_##name##_t));							\
-		free(stack);													\
 	} while (0)
 
 #define __KB_GET_AUX1(name, key_t, __cmp)								\
@@ -403,7 +413,9 @@ typedef struct {
 
 #define kbtree_t(name) kbtree_##name##_t
 #define kb_init(name, s) kb_init_##name(s)
+#define kb_static_init(name, b, s) kb_static_init_##name(b, s)
 #define kb_destroy(name, b) __kb_destroy(name, b)
+#define kb_static_destroy(name, b) __kb_static_destroy(name, b)
 #define kb_get(name, b, k) kb_get_##name(b, k)
 #define kb_put(name, b, k) kb_put_##name(b, k)
 #define kb_del(name, b, k) kb_del_##name(b, k)
